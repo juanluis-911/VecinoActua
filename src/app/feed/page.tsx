@@ -11,7 +11,7 @@ export default async function FeedPage() {
 
   const { data: reports, error } = await supabase
     .from("reports")
-    .select("*, profiles(id, full_name, avatar_url, role, is_verified)")
+    .select("*, author:profiles!reports_author_id_fkey(id, full_name, avatar_url, role, is_verified)")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -106,21 +106,21 @@ export default async function FeedPage() {
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {report.profiles?.avatar_url ? (
+                        {report.author?.avatar_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={report.profiles.avatar_url}
-                            alt={report.profiles.full_name ?? ""}
+                            src={report.author.avatar_url}
+                            alt={report.author.full_name ?? ""}
                             className="w-6 h-6 rounded-full object-cover"
                           />
                         ) : (
                           <div className="w-6 h-6 rounded-full bg-[#2D9CDB] flex items-center justify-center text-white text-xs font-bold">
-                            {report.profiles?.full_name?.[0]?.toUpperCase() ?? "?"}
+                            {report.author?.full_name?.[0]?.toUpperCase() ?? "?"}
                           </div>
                         )}
                         <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {report.profiles?.full_name ?? "Ciudadano"}
-                          {report.profiles?.is_verified && (
+                          {report.author?.full_name ?? "Ciudadano"}
+                          {report.author?.is_verified && (
                             <span className="ml-1 text-[#2D9CDB]">✓</span>
                           )}
                         </span>

@@ -81,5 +81,5 @@ export interface Database {
 
 // Tipos con joins comunes
 export type ReportWithAuthor = Database["public"]["Tables"]["reports"]["Row"] & {
-  profiles: Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name" | "avatar_url" | "role" | "is_verified">;
+  author: Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name" | "avatar_url" | "role" | "is_verified"> | null;
 };

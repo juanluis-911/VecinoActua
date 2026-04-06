@@ -17,15 +17,9 @@ export default async function MapaPage() {
 
   const reports = (reportsRaw ?? []) as unknown as ReportWithAuthor[];
 
-  // Distinct states from colonias table (canonical names)
-  const { data: estadosRaw } = await supabase
-    .from("colonias")
-    .select("estado")
-    .order("estado");
-
-  const estados: string[] = Array.from(
-    new Set((estadosRaw ?? []).map((r: { estado: string }) => r.estado))
-  );
+  // Distinct states via RPC (avoids the 1,000-row default limit)
+  const { data: estadosRaw } = await supabase.rpc("get_estados");
+  const estados: string[] = (estadosRaw ?? []).map((r) => r.estado);
 
   return (
     <main className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900">

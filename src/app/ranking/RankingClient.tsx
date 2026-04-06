@@ -32,12 +32,8 @@ export default function RankingClient({ leaders, estados }: Props) {
     if (!estado) return;
     setMuniLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
-      .from("colonias")
-      .select("municipio")
-      .eq("estado", estado)
-      .order("municipio");
-    setMunicipios(Array.from(new Set((data ?? []).map((r: { municipio: string }) => r.municipio))));
+    const { data } = await supabase.rpc("get_municipios", { p_estado: estado });
+    setMunicipios((data ?? []).map((r: { municipio: string }) => r.municipio));
     setMuniLoading(false);
   }
 

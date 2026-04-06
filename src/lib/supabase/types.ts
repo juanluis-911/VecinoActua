@@ -191,7 +191,16 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      get_estados: {
+        Args: Record<string, never>;
+        Returns: { estado: string }[];
+      };
+      get_municipios: {
+        Args: { p_estado: string };
+        Returns: { municipio: string }[];
+      };
+    };
     Enums: {
       user_role: UserRole;
       report_status: ReportStatus;

@@ -11,7 +11,48 @@ interface Props {
   estados: string[];
 }
 
-/** Haversine distance in km between two lat/lon points */
+interface MapCenter { lat: number; lon: number; delta: number }
+
+/** Approximate geographic centers of Mexican states */
+const ESTADO_CENTERS: Record<string, MapCenter> = {
+  "Aguascalientes":                      { lat: 21.885,  lon: -102.292, delta: 0.8 },
+  "Baja California":                     { lat: 30.840,  lon: -115.284, delta: 3.5 },
+  "Baja California Sur":                 { lat: 26.044,  lon: -111.666, delta: 3.0 },
+  "Campeche":                            { lat: 19.830,  lon: -90.535,  delta: 2.5 },
+  "Chiapas":                             { lat: 16.757,  lon: -93.129,  delta: 2.5 },
+  "Chihuahua":                           { lat: 28.635,  lon: -106.089, delta: 4.5 },
+  "Ciudad de México":                    { lat: 19.433,  lon: -99.133,  delta: 0.4 },
+  "Coahuila de Zaragoza":                { lat: 27.059,  lon: -101.707, delta: 4.0 },
+  "Colima":                              { lat: 19.245,  lon: -103.724, delta: 0.8 },
+  "Distrito_Federal":                    { lat: 19.433,  lon: -99.133,  delta: 0.4 },
+  "Durango":                             { lat: 24.028,  lon: -104.653, delta: 3.5 },
+  "Guanajuato":                          { lat: 21.019,  lon: -101.257, delta: 1.8 },
+  "Guerrero":                            { lat: 17.439,  lon: -100.000, delta: 2.5 },
+  "Hidalgo":                             { lat: 20.091,  lon: -98.762,  delta: 1.5 },
+  "Jalisco":                             { lat: 20.660,  lon: -103.349, delta: 2.5 },
+  "México":                              { lat: 19.497,  lon: -99.723,  delta: 1.5 },
+  "Michoacán de Ocampo":                 { lat: 19.567,  lon: -101.707, delta: 2.5 },
+  "Morelos":                             { lat: 18.681,  lon: -99.101,  delta: 0.8 },
+  "Nayarit":                             { lat: 21.751,  lon: -104.846, delta: 2.0 },
+  "Nuevo León":                          { lat: 25.592,  lon: -99.996,  delta: 2.5 },
+  "Oaxaca":                              { lat: 17.073,  lon: -96.727,  delta: 3.0 },
+  "Puebla":                              { lat: 19.041,  lon: -98.206,  delta: 2.0 },
+  "Querétaro":                           { lat: 20.589,  lon: -100.390, delta: 1.2 },
+  "Quintana Roo":                        { lat: 19.182,  lon: -88.479,  delta: 2.0 },
+  "San Luis Potosí":                     { lat: 22.157,  lon: -100.986, delta: 2.5 },
+  "Sinaloa":                             { lat: 25.172,  lon: -107.480, delta: 2.5 },
+  "Sonora":                              { lat: 29.297,  lon: -110.331, delta: 4.0 },
+  "Tabasco":                             { lat: 17.987,  lon: -92.930,  delta: 1.5 },
+  "Tamaulipas":                          { lat: 24.267,  lon: -98.836,  delta: 2.5 },
+  "Tlaxcala":                            { lat: 19.318,  lon: -98.238,  delta: 0.6 },
+  "Veracruz de Ignacio de la Llave":     { lat: 19.174,  lon: -96.134,  delta: 3.5 },
+  "Yucatán":                             { lat: 20.710,  lon: -89.094,  delta: 2.0 },
+  "Zacatecas":                           { lat: 22.771,  lon: -102.583, delta: 2.5 },
+};
+
+const DEFAULT_CENTER: MapCenter = { lat: 23.634, lon: -102.553, delta: 10 }; // México completo
+
+/** Haversine distance in km */
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -33,6 +74,12 @@ function timeAgo(date: string) {
   return `hace ${Math.floor(hrs / 24)}d`;
 }
 
+function buildMapSrc({ lat, lon, delta }: MapCenter, markerLat?: number, markerLon?: number) {
+  const bbox = `${lon - delta}%2C${lat - delta}%2C${lon + delta}%2C${lat + delta}`;
+  const marker = markerLat !== undefined ? `&marker=${markerLat}%2C${markerLon}` : "";
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik${marker}`;
+}
+
 export default function MapaClient({ reports, estados }: Props) {
   const [estadoFilter,    setEstadoFilter]    = useState("");
   const [municipioFilter, setMunicipioFilter] = useState("");
@@ -41,39 +88,49 @@ export default function MapaClient({ reports, estados }: Props) {
   const [categoryFilter,  setCategoryFilter]  = useState("");
   const [statusFilter,    setStatusFilter]    = useState("");
 
+  // Map center state — drives the iframe
+  const [mapCenter, setMapCenter] = useState<MapCenter>(DEFAULT_CENTER);
+  const [geocoding,  setGeocoding]  = useState(false);
+
   // Geolocation
-  const [userPos,     setUserPos]     = useState<{ lat: number; lon: number } | null>(null);
-  const [geoLoading,  setGeoLoading]  = useState(false);
-  const [geoError,    setGeoError]    = useState<string | null>(null);
-  const [nearbyKm,    setNearbyKm]    = useState(10);
-  const [nearbyOnly,  setNearbyOnly]  = useState(false);
+  const [userPos,    setUserPos]    = useState<{ lat: number; lon: number } | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError,   setGeoError]   = useState<string | null>(null);
+  const [nearbyKm,   setNearbyKm]   = useState(10);
+  const [nearbyOnly, setNearbyOnly] = useState(false);
 
   const requestLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGeoError("Tu navegador no soporta geolocalización.");
-      return;
-    }
+    if (!navigator.geolocation) { setGeoError("Tu navegador no soporta geolocalización."); return; }
     setGeoLoading(true);
     setGeoError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUserPos({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setUserPos(loc);
+        setMapCenter({ ...loc, delta: nearbyKm / 111 });
         setNearbyOnly(true);
         setGeoLoading(false);
       },
-      () => {
-        setGeoError("No se pudo obtener tu ubicación. Verifica los permisos.");
-        setGeoLoading(false);
-      },
+      () => { setGeoError("No se pudo obtener tu ubicación. Verifica los permisos."); setGeoLoading(false); },
       { timeout: 10000, maximumAge: 60000 }
     );
-  }, []);
+  }, [nearbyKm]);
 
   async function handleEstadoChange(estado: string) {
     setEstadoFilter(estado);
     setMunicipioFilter("");
     setMunicipios([]);
-    if (!estado) return;
+
+    if (!estado) {
+      setMapCenter(DEFAULT_CENTER);
+      return;
+    }
+
+    // Move map to state center
+    const center = ESTADO_CENTERS[estado];
+    if (center) setMapCenter(center);
+
+    // Load municipalities
     setMuniLoading(true);
     const supabase = createClient();
     const { data } = await supabase.rpc("get_municipios", { p_estado: estado });
@@ -81,7 +138,38 @@ export default function MapaClient({ reports, estados }: Props) {
     setMuniLoading(false);
   }
 
-  // Reports enriched with distance
+  async function handleMunicipioChange(municipio: string) {
+    setMunicipioFilter(municipio);
+    if (!municipio) {
+      // Back to state view
+      const center = ESTADO_CENTERS[estadoFilter];
+      if (center) setMapCenter(center);
+      return;
+    }
+
+    // Geocode municipality via Nominatim
+    setGeocoding(true);
+    try {
+      const query = encodeURIComponent(`${municipio}, ${estadoFilter}, México`);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&countrycodes=mx`,
+        { headers: { "Accept-Language": "es" } }
+      );
+      const results = await res.json();
+      if (results.length > 0) {
+        const { lat, lon } = results[0];
+        setMapCenter({ lat: parseFloat(lat), lon: parseFloat(lon), delta: 0.25 });
+      }
+    } catch {
+      // Si falla, usar centro del estado
+      const center = ESTADO_CENTERS[estadoFilter];
+      if (center) setMapCenter(center);
+    } finally {
+      setGeocoding(false);
+    }
+  }
+
+  // Enrich with distance
   const enriched = useMemo(() => {
     return reports.map((r) => ({
       ...r,
@@ -106,17 +194,21 @@ export default function MapaClient({ reports, estados }: Props) {
         return true;
       })
       .sort((a, b) => {
-        if (nearbyOnly && a.distKm !== null && b.distKm !== null) {
-          return a.distKm - b.distKm;
-        }
+        if (nearbyOnly && a.distKm !== null && b.distKm !== null) return a.distKm - b.distKm;
         return 0;
       });
   }, [enriched, estadoFilter, municipioFilter, categoryFilter, statusFilter, nearbyOnly, userPos, nearbyKm]);
 
-  // Map center: user position > first filtered report with coords > Mexico City
-  const mapLat = userPos?.lat ?? filtered.find((r) => r.latitude)?.latitude  ?? 19.4326;
-  const mapLon = userPos?.lon ?? filtered.find((r) => r.longitude)?.longitude ?? -99.1332;
-  const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - 0.07}%2C${mapLat - 0.07}%2C${mapLon + 0.07}%2C${mapLat + 0.07}&layer=mapnik${userPos ? `&marker=${mapLat}%2C${mapLon}` : ""}`;
+  // If user is nearby mode, center on user; else on the filter center
+  const effectiveCenter: MapCenter = nearbyOnly && userPos
+    ? { lat: userPos.lat, lon: userPos.lon, delta: nearbyKm / 111 }
+    : mapCenter;
+
+  const mapSrc = buildMapSrc(
+    effectiveCenter,
+    userPos?.lat,
+    userPos?.lon
+  );
 
   const activeFilters = [estadoFilter, municipioFilter, categoryFilter, statusFilter].filter(Boolean).length + (nearbyOnly ? 1 : 0);
 
@@ -136,7 +228,7 @@ export default function MapaClient({ reports, estados }: Props) {
                   {userPos.lat.toFixed(4)}, {userPos.lon.toFixed(4)}
                 </span>
                 <button
-                  onClick={() => { setNearbyOnly(false); setUserPos(null); }}
+                  onClick={() => { setNearbyOnly(false); setUserPos(null); setMapCenter(DEFAULT_CENTER); }}
                   className="text-xs text-red-400 hover:text-red-600 transition-colors"
                 >
                   ✕ Quitar
@@ -154,12 +246,7 @@ export default function MapaClient({ reports, estados }: Props) {
             {userPos && (
               <>
                 <label className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={nearbyOnly}
-                    onChange={(e) => setNearbyOnly(e.target.checked)}
-                    className="rounded"
-                  />
+                  <input type="checkbox" checked={nearbyOnly} onChange={(e) => setNearbyOnly(e.target.checked)} className="rounded" />
                   Solo cercanos
                 </label>
                 {nearbyOnly && (
@@ -177,17 +264,14 @@ export default function MapaClient({ reports, estados }: Props) {
                 )}
               </>
             )}
-
             <button
               onClick={requestLocation}
               disabled={geoLoading}
               className="flex items-center gap-2 px-4 py-2 bg-[#2D9CDB] hover:bg-[#2589c5] text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
             >
-              {geoLoading ? (
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <span>📍</span>
-              )}
+              {geoLoading
+                ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <span>📍</span>}
               {userPos ? "Actualizar ubicación" : "Usar mi ubicación"}
             </button>
           </div>
@@ -200,11 +284,17 @@ export default function MapaClient({ reports, estados }: Props) {
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Filtrar</span>
           {activeFilters > 0 && (
             <button
-              onClick={() => { setEstadoFilter(""); setMunicipioFilter(""); setCategoryFilter(""); setStatusFilter(""); setMunicipios([]); setNearbyOnly(false); }}
+              onClick={() => { setEstadoFilter(""); setMunicipioFilter(""); setCategoryFilter(""); setStatusFilter(""); setMunicipios([]); setNearbyOnly(false); setMapCenter(DEFAULT_CENTER); }}
               className="text-xs text-[#2D9CDB] hover:underline"
             >
               Limpiar ({activeFilters})
             </button>
+          )}
+          {geocoding && (
+            <span className="flex items-center gap-1 text-xs text-slate-400">
+              <span className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin" />
+              Localizando municipio…
+            </span>
           )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -223,7 +313,7 @@ export default function MapaClient({ reports, estados }: Props) {
             <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Municipio</label>
             <select
               value={municipioFilter}
-              onChange={(e) => setMunicipioFilter(e.target.value)}
+              onChange={(e) => handleMunicipioChange(e.target.value)}
               disabled={!estadoFilter || muniLoading}
               className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#2D9CDB] disabled:opacity-50"
             >
@@ -266,7 +356,7 @@ export default function MapaClient({ reports, estados }: Props) {
       {/* ── Mapa ── */}
       <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
         <iframe
-          key={`${mapLat}-${mapLon}`}
+          key={mapSrc}
           title="Mapa de reportes"
           src={mapSrc}
           width="100%"
@@ -325,13 +415,11 @@ export default function MapaClient({ reports, estados }: Props) {
                         </h3>
                         <StatusBadge status={report.status as ReportStatus} />
                       </div>
-
                       {(report.colonia || report.estado) && (
                         <p className="text-xs text-slate-400 mt-0.5">
                           📍 {[report.colonia, report.municipio, report.estado].filter(Boolean).join(", ")}
                         </p>
                       )}
-
                       {report.distKm !== null && (
                         <p className="text-xs text-[#2D9CDB] font-medium mt-0.5">
                           {report.distKm < 1
@@ -339,7 +427,6 @@ export default function MapaClient({ reports, estados }: Props) {
                             : `${report.distKm.toFixed(1)} km de ti`}
                         </p>
                       )}
-
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-slate-400">{timeAgo(report.created_at)}</span>
                         <div className="flex items-center gap-2 text-xs text-slate-400">

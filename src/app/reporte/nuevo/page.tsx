@@ -34,6 +34,25 @@ export default function NuevoReportePage() {
   const [selectedColonia, setSelectedColonia] = useState<ColoniaRow | null>(null);
   const [manualAddress,   setManualAddress]   = useState("");
 
+  // GPS coordinates (optional)
+  const [gpsCoords,  setGpsCoords]  = useState<{ lat: number; lon: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError,   setGpsError]   = useState<string | null>(null);
+
+  function requestGps() {
+    if (!navigator.geolocation) { setGpsError("Tu navegador no soporta geolocalización."); return; }
+    setGpsLoading(true);
+    setGpsError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setGpsLoading(false);
+      },
+      () => { setGpsError("No se pudo obtener la ubicación."); setGpsLoading(false); },
+      { timeout: 10000, maximumAge: 30000 }
+    );
+  }
+
   // Fetch colonias when CP has 5 digits
   useEffect(() => {
     const digits = cp.replace(/\D/g, "");
@@ -106,8 +125,8 @@ export default function NuevoReportePage() {
       address:    manualAddress.trim() || null,
       estado:     selectedColonia.estado,
       municipio:  selectedColonia.municipio,
-      latitude:   null,
-      longitude:  null,
+      latitude:   gpsCoords?.lat ?? null,
+      longitude:  gpsCoords?.lon ?? null,
       resolved_at:  null,
       resolved_by:  null,
       evidence_url: null,
@@ -280,6 +299,46 @@ export default function NuevoReportePage() {
                 placeholder="Ej: Calle Robles #42, entre Pino y Álamo"
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2D9CDB] focus:border-transparent transition"
               />
+            </div>
+
+            {/* GPS */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-100 dark:border-slate-600">
+              <div>
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Coordenadas GPS <span className="text-slate-400 font-normal">(opcional)</span>
+                </p>
+                {gpsCoords ? (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    ✓ {gpsCoords.lat.toFixed(5)}, {gpsCoords.lon.toFixed(5)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Permite ubicar tu reporte exactamente en el mapa.
+                  </p>
+                )}
+                {gpsError && <p className="text-xs text-red-500 mt-0.5">{gpsError}</p>}
+              </div>
+              {gpsCoords ? (
+                <button
+                  type="button"
+                  onClick={() => setGpsCoords(null)}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors ml-4"
+                >
+                  ✕ Quitar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={requestGps}
+                  disabled={gpsLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-[#2D9CDB] hover:bg-[#2589c5] text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-60 ml-4 shrink-0"
+                >
+                  {gpsLoading
+                    ? <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : "📍"}
+                  Obtener ubicación
+                </button>
+              )}
             </div>
           </div>
 

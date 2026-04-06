@@ -93,22 +93,39 @@ export default function MapaClient({ reports, estados }: Props) {
   const [geocoding,  setGeocoding]  = useState(false);
 
   // Geolocation
-  const [userPos,    setUserPos]    = useState<{ lat: number; lon: number } | null>(null);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoError,   setGeoError]   = useState<string | null>(null);
-  const [nearbyKm,   setNearbyKm]   = useState(10);
-  const [nearbyOnly, setNearbyOnly] = useState(false);
+  const [userPos,      setUserPos]      = useState<{ lat: number; lon: number } | null>(null);
+  const [userLocality, setUserLocality] = useState<{ estado: string; municipio: string } | null>(null);
+  const [geoLoading,   setGeoLoading]   = useState(false);
+  const [geoError,     setGeoError]     = useState<string | null>(null);
+  const [nearbyKm,     setNearbyKm]     = useState(10);
+  const [nearbyOnly,   setNearbyOnly]   = useState(false);
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) { setGeoError("Tu navegador no soporta geolocalización."); return; }
     setGeoLoading(true);
     setGeoError(null);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setUserPos(loc);
         setMapCenter({ ...loc, delta: nearbyKm / 111 });
         setNearbyOnly(true);
+
+        // Reverse geocode to get estado/municipio for reports without coords
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lon}&format=json&addressdetails=1&accept-language=es`,
+            { headers: { "Accept-Language": "es" } }
+          );
+          const data = await res.json();
+          const addr = data?.address ?? {};
+          const estado    = addr.state ?? null;
+          const municipio = addr.city ?? addr.town ?? addr.municipality ?? addr.county ?? null;
+          if (estado) setUserLocality({ estado, municipio: municipio ?? "" });
+        } catch {
+          // No pasa nada, solo no tendremos fallback por nombre
+        }
+
         setGeoLoading(false);
       },
       () => { setGeoError("No se pudo obtener tu ubicación. Verifica los permisos."); setGeoLoading(false); },
@@ -188,13 +205,27 @@ export default function MapaClient({ reports, estados }: Props) {
         if (categoryFilter  && r.category  !== categoryFilter)  return false;
         if (statusFilter    && r.status    !== statusFilter)    return false;
         if (nearbyOnly && userPos) {
-          if (r.distKm === null) return false;
-          if (r.distKm > nearbyKm) return false;
+          // Reporte con coordenadas: filtrar por radio
+          if (r.distKm !== null) return r.distKm <= nearbyKm;
+          // Reporte sin coordenadas: incluir si está en el mismo estado/municipio del usuario
+          if (userLocality) {
+            const sameEstado = r.estado &&
+              r.estado.toLowerCase() === userLocality.estado.toLowerCase();
+            const sameMunicipio = !userLocality.municipio || !r.municipio ||
+              r.municipio.toLowerCase() === userLocality.municipio.toLowerCase();
+            return !!(sameEstado && sameMunicipio);
+          }
+          return false;
         }
         return true;
       })
       .sort((a, b) => {
-        if (nearbyOnly && a.distKm !== null && b.distKm !== null) return a.distKm - b.distKm;
+        // Reportes con coords exactas primero, luego los de misma zona
+        if (nearbyOnly) {
+          if (a.distKm !== null && b.distKm !== null) return a.distKm - b.distKm;
+          if (a.distKm !== null) return -1;
+          if (b.distKm !== null) return 1;
+        }
         return 0;
       });
   }, [enriched, estadoFilter, municipioFilter, categoryFilter, statusFilter, nearbyOnly, userPos, nearbyKm]);
@@ -228,7 +259,7 @@ export default function MapaClient({ reports, estados }: Props) {
                   {userPos.lat.toFixed(4)}, {userPos.lon.toFixed(4)}
                 </span>
                 <button
-                  onClick={() => { setNearbyOnly(false); setUserPos(null); setMapCenter(DEFAULT_CENTER); }}
+                  onClick={() => { setNearbyOnly(false); setUserPos(null); setUserLocality(null); setMapCenter(DEFAULT_CENTER); }}
                   className="text-xs text-red-400 hover:text-red-600 transition-colors"
                 >
                   ✕ Quitar
@@ -420,12 +451,16 @@ export default function MapaClient({ reports, estados }: Props) {
                           📍 {[report.colonia, report.municipio, report.estado].filter(Boolean).join(", ")}
                         </p>
                       )}
-                      {report.distKm !== null && (
-                        <p className="text-xs text-[#2D9CDB] font-medium mt-0.5">
-                          {report.distKm < 1
-                            ? `${Math.round(report.distKm * 1000)} m de ti`
-                            : `${report.distKm.toFixed(1)} km de ti`}
-                        </p>
+                      {nearbyOnly && (
+                        report.distKm !== null ? (
+                          <p className="text-xs text-[#2D9CDB] font-medium mt-0.5">
+                            {report.distKm < 1
+                              ? `${Math.round(report.distKm * 1000)} m de ti`
+                              : `${report.distKm.toFixed(1)} km de ti`}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-400 mt-0.5">📍 Misma zona</p>
+                        )
                       )}
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-slate-400">{timeAgo(report.created_at)}</span>

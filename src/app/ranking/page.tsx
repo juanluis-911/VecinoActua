@@ -1,44 +1,55 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import RankingClient from "./RankingClient";
 import type { Database } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
-const roleLabels: Record<string, { label: string; color: string }> = {
-  citizen:    { label: "Ciudadano",   color: "text-slate-500 dark:text-slate-400" },
-  candidate:  { label: "Candidato",   color: "text-purple-500" },
-  official:   { label: "Funcionario", color: "text-blue-500" },
-  influencer: { label: "Influencer",  color: "text-pink-500" },
-};
-
-const medalEmojis = ["🥇", "🥈", "🥉"];
-
 export default async function RankingPage() {
   const supabase = await createClient();
 
-  const { data: topReporters } = await supabase
+  // Top reporters (all, client will filter)
+  const { data: topRaw } = await supabase
     .from("profiles")
     .select("*")
+    .gt("reports_count", 0)
     .order("reports_count", { ascending: false })
-    .limit(20);
+    .limit(100);
 
-  const leaders = (topReporters ?? []) as Profile[];
+  const leaders = (topRaw ?? []) as Profile[];
 
-  // Stats
-  const { count: totalReports } = await supabase
+  // Global stats
+  const [{ count: totalReports }, { count: resolvedCount }, { count: totalUsers }] =
+    await Promise.all([
+      supabase.from("reports").select("*", { count: "exact", head: true }),
+      supabase.from("reports").select("*", { count: "exact", head: true }).eq("status", "resolved"),
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+    ]);
+
+  // Reports per estado (from reports table)
+  const { data: estadoStatsRaw } = await supabase
     .from("reports")
-    .select("*", { count: "exact", head: true });
+    .select("estado")
+    .not("estado", "is", null);
 
-  const { count: resolvedCount } = await supabase
-    .from("reports")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "resolved");
+  const estadoMap: Record<string, number> = {};
+  for (const r of estadoStatsRaw ?? []) {
+    if (r.estado) estadoMap[r.estado] = (estadoMap[r.estado] ?? 0) + 1;
+  }
+  const estadoStats = Object.entries(estadoMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
 
-  const { count: totalUsers } = await supabase
-    .from("profiles")
-    .select("*", { count: "exact", head: true });
+  // Distinct states (for filter)
+  const { data: estadosRaw } = await supabase
+    .from("colonias")
+    .select("estado")
+    .order("estado");
+  const estados: string[] = Array.from(
+    new Set((estadosRaw ?? []).map((r: { estado: string }) => r.estado))
+  );
 
   return (
     <main className="flex-1 bg-slate-50 dark:bg-slate-900">
@@ -50,16 +61,14 @@ export default async function RankingPage() {
           <p className="text-blue-100 text-sm max-w-md mx-auto">
             Los vecinos más activos reportando problemas y mejorando la ciudad.
           </p>
-
-          {/* Global stats */}
           <div className="mt-8 grid grid-cols-3 gap-4 max-w-sm mx-auto">
             {[
-              { value: totalReports ?? 0, label: "Reportes totales" },
-              { value: resolvedCount ?? 0, label: "Resueltos" },
-              { value: totalUsers ?? 0,   label: "Participantes" },
+              { value: (totalReports ?? 0).toLocaleString(),  label: "Reportes totales" },
+              { value: (resolvedCount ?? 0).toLocaleString(), label: "Resueltos" },
+              { value: (totalUsers ?? 0).toLocaleString(),    label: "Participantes" },
             ].map(({ value, label }) => (
               <div key={label} className="text-center">
-                <div className="text-2xl font-bold">{value.toLocaleString()}</div>
+                <div className="text-2xl font-bold">{value}</div>
                 <div className="text-xs text-blue-200 mt-0.5">{label}</div>
               </div>
             ))}
@@ -67,102 +76,42 @@ export default async function RankingPage() {
         </div>
       </div>
 
-      {/* Leaderboard */}
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-8">
-        {leaders.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="text-5xl mb-4">📭</div>
-            <p className="text-slate-500 dark:text-slate-400 mb-4">
-              Todavía no hay reportes. ¡Sé el primero en el ranking!
-            </p>
-            <Link
-              href="/reporte/nuevo"
-              className="inline-block px-6 py-3 bg-[#FF5A5F] text-white font-semibold rounded-xl hover:bg-[#e04e53] transition-colors"
-            >
-              Crear primer reporte
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {leaders.map((profile, index) => {
-              const position = index + 1;
-              const roleInfo = roleLabels[profile.role] ?? roleLabels.citizen;
-              const avatarLetter = profile.full_name?.[0]?.toUpperCase() ?? "?";
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 space-y-8">
 
-              return (
-                <div
-                  key={profile.id}
-                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-shadow hover:shadow-sm ${
-                    position <= 3
-                      ? "bg-white dark:bg-slate-800 border-yellow-200 dark:border-yellow-700/40 shadow-sm"
-                      : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700"
-                  }`}
-                >
-                  {/* Position */}
-                  <div className="w-10 text-center shrink-0">
-                    {position <= 3 ? (
-                      <span className="text-2xl">{medalEmojis[position - 1]}</span>
-                    ) : (
-                      <span className="text-lg font-bold text-slate-400 dark:text-slate-500">
-                        {position}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Avatar */}
-                  {profile.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={profile.avatar_url}
-                      alt={profile.full_name ?? ""}
-                      className="w-12 h-12 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-[#2D9CDB] flex items-center justify-center text-white text-lg font-bold shrink-0">
-                      {avatarLetter}
-                    </div>
-                  )}
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-900 dark:text-white truncate">
-                        {profile.full_name ?? "Ciudadano anónimo"}
-                      </span>
-                      {profile.is_verified && (
-                        <span className="text-[#2D9CDB] text-sm shrink-0">✓</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-xs font-medium ${roleInfo.color}`}>
-                        {roleInfo.label}
-                      </span>
-                      {profile.colonia && (
-                        <>
-                          <span className="text-slate-300 dark:text-slate-600">·</span>
-                          <span className="text-xs text-slate-400 truncate">{profile.colonia}</span>
-                        </>
-                      )}
+        {/* ── Heatmap por estado ── */}
+        {estadoStats.length > 0 && (
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white mb-3">
+              🗺️ Estados más activos
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {estadoStats.map(([estado, count], i) => {
+                const max = estadoStats[0][1];
+                const pct = Math.round((count / max) * 100);
+                return (
+                  <div key={estado} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-3 flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-400 w-5 text-right">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-slate-800 dark:text-white truncate">{estado}</span>
+                        <span className="text-xs font-bold text-[#2D9CDB] ml-2">{count}</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#2D9CDB] rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
                   </div>
-
-                  {/* Score */}
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold text-slate-900 dark:text-white">
-                      {profile.reports_count}
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      {profile.reports_count === 1 ? "reporte" : "reportes"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
 
+        {/* ── Leaderboard (client) ── */}
+        <RankingClient leaders={leaders} estados={estados} />
+
         {/* CTA */}
-        <div className="mt-10 p-6 bg-gradient-to-r from-[#FF5A5F] to-[#e04e53] rounded-2xl text-white text-center">
+        <div className="p-6 bg-gradient-to-r from-[#FF5A5F] to-[#e04e53] rounded-2xl text-white text-center">
           <h3 className="font-bold text-lg mb-1">¡Sube en el ranking!</h3>
           <p className="text-red-100 text-sm mb-4">
             Cada reporte que publicas suma puntos y ayuda a mejorar tu ciudad.

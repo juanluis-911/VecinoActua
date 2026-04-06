@@ -63,6 +63,8 @@ export interface Database {
           longitude: number | null;
           colonia: string | null;
           address: string | null;
+          estado: string | null;
+          municipio: string | null;
           likes_count: number;
           comments_count: number;
           resolved_at: string | null;
@@ -83,6 +85,8 @@ export interface Database {
           longitude?: number | null;
           colonia?: string | null;
           address?: string | null;
+          estado?: string | null;
+          municipio?: string | null;
           likes_count?: number;
           comments_count?: number;
           resolved_at?: string | null;
@@ -103,6 +107,8 @@ export interface Database {
           longitude?: number | null;
           colonia?: string | null;
           address?: string | null;
+          estado?: string | null;
+          municipio?: string | null;
           likes_count?: number;
           comments_count?: number;
           resolved_at?: string | null;
@@ -147,6 +153,42 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      colonias: {
+        Row: {
+          id: number;
+          cp: string;
+          colonia: string;
+          tipo: string | null;
+          municipio: string;
+          estado: string;
+          ciudad: string | null;
+          zona: string | null;
+          c_estado: string | null;
+        };
+        Insert: {
+          id?: number;
+          cp: string;
+          colonia: string;
+          tipo?: string | null;
+          municipio: string;
+          estado: string;
+          ciudad?: string | null;
+          zona?: string | null;
+          c_estado?: string | null;
+        };
+        Update: {
+          id?: number;
+          cp?: string;
+          colonia?: string;
+          tipo?: string | null;
+          municipio?: string;
+          estado?: string;
+          ciudad?: string | null;
+          zona?: string | null;
+          c_estado?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -163,3 +205,5 @@ export interface Database {
 export type ReportWithAuthor = Database["public"]["Tables"]["reports"]["Row"] & {
   author: Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name" | "avatar_url" | "role" | "is_verified"> | null;
 };
+
+export type ColoniaRow = Database["public"]["Tables"]["colonias"]["Row"];

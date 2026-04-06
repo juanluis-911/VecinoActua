@@ -3,7 +3,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import StatusBadge from "@/components/ui/StatusBadge";
 import CategoryIcon from "@/components/ui/CategoryIcon";
-import type { ReportWithAuthor, ReportCategory, ReportStatus } from "@/lib/supabase/types";
+import type { Database, ReportWithAuthor, ReportCategory, ReportStatus } from "@/lib/supabase/types";
+
+type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +22,13 @@ export default async function PerfilPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/perfil");
 
-  const { data: profile } = await supabase
+  const { data: profileRaw } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
+
+  const profile = profileRaw as Profile | null;
 
   const { data: reports } = await supabase
     .from("reports")

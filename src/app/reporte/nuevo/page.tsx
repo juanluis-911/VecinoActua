@@ -4,7 +4,9 @@ import { useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { categories } from "@/components/ui/CategoryIcon";
-import type { ReportCategory } from "@/lib/supabase/types";
+import type { Database, ReportCategory } from "@/lib/supabase/types";
+
+type ReportInsert = Database["public"]["Tables"]["reports"]["Insert"];
 
 const categoryKeys = Object.keys(categories) as ReportCategory[];
 
@@ -65,7 +67,7 @@ export default function NuevoReportePage() {
       image_url = urlData.publicUrl;
     }
 
-    const { error: insertError } = await supabase.from("reports").insert({
+    const insertData: ReportInsert = {
       author_id: user.id,
       title: title.trim(),
       description: description.trim() || null,
@@ -79,7 +81,8 @@ export default function NuevoReportePage() {
       resolved_at: null,
       resolved_by: null,
       evidence_url: null,
-    });
+    };
+    const { error: insertError } = await supabase.from("reports").insert(insertData);
 
     if (insertError) {
       setError("Error creando reporte: " + insertError.message);

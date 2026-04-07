@@ -2,12 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Database } from "@/lib/supabase/types";
-
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+import type { EnrichedProfile } from "./page";
 
 interface Props {
-  leaders: Profile[];
+  leaders: EnrichedProfile[];
   estados: string[];
 }
 
@@ -39,15 +37,11 @@ export default function RankingClient({ leaders, estados }: Props) {
 
   const filtered = useMemo(() => {
     return leaders.filter((p) => {
-      // Match profile's colonia field against estado/municipio
-      // (profiles have colonia as free-text, may contain municipio)
       if (estadoFilter) {
-        const haystack = [p.colonia, p.city].join(" ").toLowerCase();
-        if (!haystack.includes(estadoFilter.toLowerCase())) return false;
+        if (p.profile_estado?.toLowerCase() !== estadoFilter.toLowerCase()) return false;
       }
       if (municipioFilter) {
-        const haystack = [p.colonia, p.city].join(" ").toLowerCase();
-        if (!haystack.includes(municipioFilter.toLowerCase())) return false;
+        if (p.profile_municipio?.toLowerCase() !== municipioFilter.toLowerCase()) return false;
       }
       return true;
     });
@@ -148,10 +142,12 @@ export default function RankingClient({ leaders, estados }: Props) {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className={`text-xs font-medium ${roleInfo.color}`}>{roleInfo.label}</span>
-                    {profile.colonia && (
+                    {(profile.colonia || profile.profile_municipio || profile.profile_estado) && (
                       <>
                         <span className="text-slate-300 dark:text-slate-600">·</span>
-                        <span className="text-xs text-slate-400 truncate">📍 {profile.colonia}</span>
+                        <span className="text-xs text-slate-400 truncate">
+                          📍 {profile.colonia ?? [profile.profile_municipio, profile.profile_estado].filter(Boolean).join(", ")}
+                        </span>
                       </>
                     )}
                   </div>

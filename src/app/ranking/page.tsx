@@ -6,6 +6,7 @@ import type { Database } from "@/lib/supabase/types";
 export const dynamic = "force-dynamic";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type EnrichedProfile = Profile & { profile_estado: string | null; profile_municipio: string | null };
 
 export default async function RankingPage() {
   const supabase = await createClient();
@@ -18,7 +19,51 @@ export default async function RankingPage() {
     .order("reports_count", { ascending: false })
     .limit(100);
 
-  const leaders = (topRaw ?? []) as Profile[];
+  const profiles = (topRaw ?? []) as Profile[];
+
+  // Enrich each profile with their most common estado/municipio from reports
+  // (Google-registered users have null colonia/city in profiles)
+  let leaders: EnrichedProfile[] = profiles.map((p) => ({
+    ...p,
+    profile_estado: null,
+    profile_municipio: null,
+  }));
+
+  if (profiles.length > 0) {
+    const ids = profiles.map((p) => p.id);
+    const { data: reportLocs } = await supabase
+      .from("reports")
+      .select("author_id, estado, municipio")
+      .in("author_id", ids)
+      .not("estado", "is", null);
+
+    if (reportLocs && reportLocs.length > 0) {
+      // Count occurrences of each estado/municipio per author
+      const countMap: Record<string, Record<string, number>> = {};
+      const muniMap: Record<string, Record<string, number>> = {};
+      for (const r of reportLocs) {
+        if (!r.author_id || !r.estado) continue;
+        countMap[r.author_id] ??= {};
+        countMap[r.author_id][r.estado] = (countMap[r.author_id][r.estado] ?? 0) + 1;
+        if (r.municipio) {
+          muniMap[r.author_id] ??= {};
+          muniMap[r.author_id][r.municipio] = (muniMap[r.author_id][r.municipio] ?? 0) + 1;
+        }
+      }
+      // Pick the most frequent for each user
+      leaders = profiles.map((p) => {
+        const estadoCounts = countMap[p.id];
+        const muniCounts   = muniMap[p.id];
+        const topEstado    = estadoCounts
+          ? Object.entries(estadoCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+          : null;
+        const topMunicipio = muniCounts
+          ? Object.entries(muniCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+          : null;
+        return { ...p, profile_estado: topEstado, profile_municipio: topMunicipio };
+      });
+    }
+  }
 
   // Global stats
   const [{ count: totalReports }, { count: resolvedCount }, { count: totalUsers }] =

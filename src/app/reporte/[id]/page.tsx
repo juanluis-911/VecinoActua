@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import StatusBadge from "@/components/ui/StatusBadge";
 import CategoryIcon from "@/components/ui/CategoryIcon";
 import ComentariosClient from "./ComentariosClient";
-import LikeButton from "@/components/ui/LikeButton";
-import type { Database, ReportStatus, ReportCategory } from "@/lib/supabase/types";
+import ReactionsButton from "@/components/ui/ReactionsButton";
+import type { Database, ReportStatus, ReportCategory, ReactionType } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
@@ -46,18 +46,6 @@ function formatDate(date: string, opts?: Intl.DateTimeFormatOptions) {
   });
 }
 
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 2)   return "justo ahora";
-  if (mins < 60)  return `hace ${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)   return `hace ${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  if (days === 1) return "ayer";
-  if (days < 30)  return `hace ${days} días`;
-  return formatDate(date, { year: undefined });
-}
 
 export default async function ReporteDetallePage({
   params,
@@ -67,12 +55,11 @@ export default async function ReporteDetallePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Current user (optional — needed for like + comment)
+  // Current user (opcional — para reacciones y comentarios)
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Fetch profile + whether user already liked — in parallel
   let currentProfile: Pick<ProfileRow, "full_name" | "avatar_url"> | null = null;
-  let isLiked = false;
+  let reportReaction: ReactionType | null = null;
 
   if (user) {
     const [{ data: profile }, { data: likeRow }] = await Promise.all([
@@ -83,13 +70,13 @@ export default async function ReporteDetallePage({
         .single(),
       supabase
         .from("likes")
-        .select("id")
+        .select("reaction_type")
         .eq("report_id", id)
         .eq("user_id", user.id)
         .maybeSingle(),
     ]);
-    currentProfile = profile;
-    isLiked = !!likeRow;
+    currentProfile  = profile;
+    reportReaction  = (likeRow?.reaction_type as ReactionType) ?? null;
   }
 
   // Fetch report + author
@@ -110,6 +97,33 @@ export default async function ReporteDetallePage({
     .order("created_at", { ascending: true });
 
   const comments = (commentsRaw ?? []) as unknown as CommentWithAuthor[];
+
+  // Reacciones en comentarios
+  let userCommentReactions: Record<string, ReactionType> = {};
+  let commentReactCounts:   Record<string, number>       = {};
+
+  if (comments.length > 0) {
+    const commentIds = comments.map((c) => c.id);
+    const [{ data: allReacts }, { data: userReacts }] = await Promise.all([
+      supabase
+        .from("comment_reactions")
+        .select("comment_id")
+        .in("comment_id", commentIds),
+      user
+        ? supabase
+            .from("comment_reactions")
+            .select("comment_id, reaction_type")
+            .in("comment_id", commentIds)
+            .eq("user_id", user.id)
+        : Promise.resolve({ data: [] }),
+    ]);
+    for (const r of allReacts ?? []) {
+      commentReactCounts[r.comment_id] = (commentReactCounts[r.comment_id] ?? 0) + 1;
+    }
+    for (const r of (userReacts as { comment_id: string; reaction_type: string }[] | null) ?? []) {
+      userCommentReactions[r.comment_id] = r.reaction_type as ReactionType;
+    }
+  }
 
   // Fetch resolver profile if resolved
   let resolver: Pick<ProfileRow, "full_name" | "role"> | null = null;
@@ -243,10 +257,10 @@ export default async function ReporteDetallePage({
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <LikeButton
+              <ReactionsButton
                 reportId={report.id}
+                initialReaction={reportReaction}
                 initialCount={report.likes_count}
-                initialLiked={isLiked}
                 userId={user?.id ?? null}
                 redirectPath={`/reporte/${id}`}
                 size="md"
@@ -365,62 +379,21 @@ export default async function ReporteDetallePage({
           </div>
         )}
 
-        {/* ── Comments ── */}
+        {/* ── Comentarios + reacciones ── */}
         <div id="comentarios" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white mb-5 flex items-center gap-2">
             💬 Comentarios
             <span className="text-xs font-normal text-slate-400">({comments.length})</span>
           </h2>
 
-          {/* Comments list */}
-          {comments.length === 0 ? (
-            <p className="text-sm text-slate-400 dark:text-slate-500 py-4 text-center">
-              Sé el primero en comentar.
-            </p>
-          ) : (
-            <div className="space-y-4 mb-4">
-              {comments.map((comment) => {
-                const letter = comment.author?.full_name?.[0]?.toUpperCase() ?? "?";
-                return (
-                  <div key={comment.id} className="flex gap-3">
-                    {comment.author?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={comment.author.avatar_url}
-                        alt={comment.author.full_name ?? ""}
-                        className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 shrink-0 mt-0.5">
-                        {letter}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                          {comment.author?.full_name ?? "Anónimo"}
-                        </span>
-                        {comment.author?.is_verified && (
-                          <span className="text-[#2D9CDB] text-xs">✓</span>
-                        )}
-                        <span className="text-xs text-slate-400">{timeAgo(comment.created_at)}</span>
-                      </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
-                        {comment.content}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Comment form (client component) */}
           <ComentariosClient
             reportId={id}
             userId={user?.id ?? null}
             userAvatarUrl={currentProfile?.avatar_url ?? null}
             userName={currentProfile?.full_name ?? null}
+            initialComments={comments}
+            userCommentReactions={userCommentReactions}
+            commentReactCounts={commentReactCounts}
           />
         </div>
 

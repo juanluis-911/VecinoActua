@@ -3,13 +3,13 @@
 import Link from "next/link";
 import StatusBadge from "@/components/ui/StatusBadge";
 import CategoryIcon from "@/components/ui/CategoryIcon";
-import LikeButton from "@/components/ui/LikeButton";
-import type { ReportWithAuthor, ReportStatus, ReportCategory } from "@/lib/supabase/types";
+import ReactionsButton from "@/components/ui/ReactionsButton";
+import type { ReportWithAuthor, ReactionType, ReportStatus, ReportCategory } from "@/lib/supabase/types";
 
 interface Props {
-  reports:  ReportWithAuthor[];
-  likedIds: string[];
-  userId:   string | null;
+  reports:       ReportWithAuthor[];
+  userReactions: Record<string, ReactionType>;
+  userId:        string | null;
 }
 
 function timeAgo(date: string) {
@@ -25,9 +25,7 @@ function timeAgo(date: string) {
   return new Date(date).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
-export default function FeedClient({ reports, likedIds, userId }: Props) {
-  const likedSet = new Set(likedIds);
-
+export default function FeedClient({ reports, userReactions, userId }: Props) {
   return (
     <div className="space-y-4">
       {reports.map((report) => (
@@ -35,7 +33,7 @@ export default function FeedClient({ reports, likedIds, userId }: Props) {
           key={report.id}
           className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow overflow-hidden group"
         >
-          {/* ── Clickable content area ── */}
+          {/* ── Área clickable → detalle ── */}
           <Link href={`/reporte/${report.id}`} className="block">
             {report.image_url && (
               <div className="w-full h-48 bg-slate-100 dark:bg-slate-700 overflow-hidden">
@@ -73,7 +71,7 @@ export default function FeedClient({ reports, likedIds, userId }: Props) {
                     </p>
                   )}
 
-                  {/* Author */}
+                  {/* Autor */}
                   <div className="flex items-center gap-2">
                     {report.author?.avatar_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -101,12 +99,12 @@ export default function FeedClient({ reports, likedIds, userId }: Props) {
             </div>
           </Link>
 
-          {/* ── Acciones (fuera del Link para no navegar) ── */}
-          <div className="flex items-center gap-4 px-5 py-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/20">
-            <LikeButton
+          {/* ── Barra de acciones (fuera del Link) ── */}
+          <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/20">
+            <ReactionsButton
               reportId={report.id}
+              initialReaction={userReactions[report.id] ?? null}
               initialCount={report.likes_count}
-              initialLiked={likedSet.has(report.id)}
               userId={userId}
               redirectPath="/feed"
             />

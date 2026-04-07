@@ -1,6 +1,7 @@
-export type UserRole = "citizen" | "candidate" | "official" | "influencer";
-export type ReportStatus = "open" | "in_progress" | "resolved";
+export type UserRole       = "citizen" | "candidate" | "official" | "influencer";
+export type ReportStatus   = "open" | "in_progress" | "resolved";
 export type ReportCategory = "bache" | "lampara" | "agua" | "basura" | "fuga" | "otro";
+export type ReactionType   = "like" | "love" | "haha" | "wow" | "sad" | "angry";
 
 export interface Database {
   public: {
@@ -139,18 +140,42 @@ export interface Database {
       };
       likes: {
         Row: {
-          id: string;
-          report_id: string;
-          user_id: string;
-          created_at: string;
+          id:            string;
+          report_id:     string;
+          user_id:       string;
+          reaction_type: ReactionType;
+          created_at:    string;
         };
         Insert: {
-          id?: string;
-          report_id: string;
-          user_id: string;
-          created_at?: string;
+          id?:            string;
+          report_id:      string;
+          user_id:        string;
+          reaction_type?: ReactionType;
+          created_at?:    string;
         };
-        Update: never;
+        Update: {
+          reaction_type?: ReactionType;
+        };
+        Relationships: [];
+      };
+      comment_reactions: {
+        Row: {
+          id:            string;
+          comment_id:    string;
+          user_id:       string;
+          reaction_type: ReactionType;
+          created_at:    string;
+        };
+        Insert: {
+          id?:            string;
+          comment_id:     string;
+          user_id:        string;
+          reaction_type?: ReactionType;
+          created_at?:    string;
+        };
+        Update: {
+          reaction_type?: ReactionType;
+        };
         Relationships: [];
       };
       colonias: {
@@ -202,9 +227,10 @@ export interface Database {
       };
     };
     Enums: {
-      user_role: UserRole;
-      report_status: ReportStatus;
+      user_role:       UserRole;
+      report_status:   ReportStatus;
       report_category: ReportCategory;
+      reaction_type:   ReactionType;
     };
     CompositeTypes: Record<string, never>;
   };

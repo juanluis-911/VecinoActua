@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import type { ReportWithAuthor } from "@/lib/supabase/types";
+import type { ReportWithAuthor, ReactionType } from "@/lib/supabase/types";
 import FeedClient from "./FeedClient";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +18,16 @@ export default async function FeedPage() {
     supabase.auth.getUser(),
   ]);
 
-  // IDs de reportes que el usuario ya dio like
-  let likedIds: string[] = [];
+  // Reacciones del usuario (reportId → tipo)
+  let userReactions: Record<string, ReactionType> = {};
   if (user) {
     const { data: likes } = await supabase
       .from("likes")
-      .select("report_id")
+      .select("report_id, reaction_type")
       .eq("user_id", user.id);
-    likedIds = (likes ?? []).map((l) => l.report_id);
+    for (const l of likes ?? []) {
+      userReactions[l.report_id] = l.reaction_type;
+    }
   }
 
   const feed = (reports ?? []) as unknown as ReportWithAuthor[];
@@ -67,7 +69,7 @@ export default async function FeedPage() {
         ) : (
           <FeedClient
             reports={feed}
-            likedIds={likedIds}
+            userReactions={userReactions}
             userId={user?.id ?? null}
           />
         )}

@@ -111,19 +111,28 @@ export default function MapaClient({ reports, estados }: Props) {
         setMapCenter({ ...loc, delta: nearbyKm / 111 });
         setNearbyOnly(true);
 
-        // Reverse geocode to get estado/municipio for reports without coords
+        // 1) Fallback inmediato: estado más cercano por distancia geométrica
+        let closestEstado = "";
+        let closestDist   = Infinity;
+        for (const [name, center] of Object.entries(ESTADO_CENTERS)) {
+          const d = haversine(loc.lat, loc.lon, center.lat, center.lon);
+          if (d < closestDist) { closestDist = d; closestEstado = name; }
+        }
+        if (closestEstado) setUserLocality({ estado: closestEstado, municipio: "" });
+
+        // 2) Refinar con Nominatim (asíncrono, sobrescribe si tiene éxito)
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lon}&format=json&addressdetails=1&accept-language=es`,
-            { headers: { "Accept-Language": "es" } }
+            `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lon}&format=json&addressdetails=1`,
+            { headers: { "Accept-Language": "es" }, signal: AbortSignal.timeout(6000) }
           );
           const data = await res.json();
-          const addr = data?.address ?? {};
+          const addr      = data?.address ?? {};
           const estado    = addr.state ?? null;
           const municipio = addr.city ?? addr.town ?? addr.municipality ?? addr.county ?? null;
           if (estado) setUserLocality({ estado, municipio: municipio ?? "" });
         } catch {
-          // No pasa nada, solo no tendremos fallback por nombre
+          // Ya tenemos el fallback geométrico, no pasa nada
         }
 
         setGeoLoading(false);
@@ -207,15 +216,23 @@ export default function MapaClient({ reports, estados }: Props) {
         if (nearbyOnly && userPos) {
           // Reporte con coordenadas: filtrar por radio
           if (r.distKm !== null) return r.distKm <= nearbyKm;
-          // Reporte sin coordenadas: incluir si está en el mismo estado/municipio del usuario
-          if (userLocality) {
-            const sameEstado = r.estado &&
-              r.estado.toLowerCase() === userLocality.estado.toLowerCase();
-            const sameMunicipio = !userLocality.municipio || !r.municipio ||
-              r.municipio.toLowerCase() === userLocality.municipio.toLowerCase();
-            return !!(sameEstado && sameMunicipio);
+          // Reporte sin coordenadas: incluir si está en el mismo estado del usuario
+          if (userLocality?.estado && r.estado) {
+            const rE = r.estado.toLowerCase().trim();
+            const uE = userLocality.estado.toLowerCase().trim();
+            // Coincidencia flexible: uno contiene al otro (cubre "Michoacán de Ocampo" vs "Michoacán")
+            const sameEstado = rE === uE || rE.includes(uE) || uE.includes(rE);
+            if (!sameEstado) return false;
+            // Si tenemos municipio, afinar; si no, solo el estado basta
+            if (userLocality.municipio && r.municipio) {
+              const rM = r.municipio.toLowerCase().trim();
+              const uM = userLocality.municipio.toLowerCase().trim();
+              return rM === uM || rM.includes(uM) || uM.includes(rM);
+            }
+            return true;
           }
-          return false;
+          // Sin locality aún: mostrar todos los que tengan estado (no descartar)
+          return r.estado !== null;
         }
         return true;
       })
